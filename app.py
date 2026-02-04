@@ -29,13 +29,27 @@ with st.sidebar:
         "2da Mitad (2H)"
     ])
     
-    # Configuración interna según la elección
+# --- EL SELECTOR MÁGICO (ACTUALIZADO CON TODO) ---
+    modo = st.selectbox("🎯 ¿Qué cazamos hoy?", [
+        "Partido Completo (Full Game)",
+        "1er Cuarto (1Q)",
+        "2do Cuarto (2Q)",
+        "3er Cuarto (3Q)",  # <--- NUEVO
+        "4to Cuarto (4Q)",  # <--- NUEVO
+        "1ra Mitad (1H)",
+        "2da Mitad (2H)"
+    ])
+    
+    # Configuración interna mapeada
     config_map = {
         "Partido Completo (Full Game)": {"bovada": "Game Lines", "api": "spreads"},
         "1er Cuarto (1Q)":             {"bovada": "1st Quarter", "api": "spreads_q1"},
         "2do Cuarto (2Q)":             {"bovada": "2nd Quarter", "api": "spreads_q2"},
+        "3er Cuarto (3Q)":             {"bovada": "3rd Quarter", "api": "spreads_q3"}, # <--- NUEVO
+        "4to Cuarto (4Q)":             {"bovada": "4th Quarter", "api": "spreads_q4"}, # <--- NUEVO
         "1ra Mitad (1H)":              {"bovada": "1st Half",    "api": "spreads_h1"},
         "2da Mitad (2H)":              {"bovada": "2nd Half",    "api": "spreads_h2"}
+    }
     }
     
     seleccion = config_map[modo]
