@@ -5,45 +5,49 @@ import random
 
 def get_bovada_odds():
     all_odds = []
-    print("🚀 INICIANDO ESCANEO BOVADA (MODO MÓVIL V2)...")
+    print("🚀 INICIANDO ESCANEO DIAGNÓSTICO...")
 
-    # Usamos cloudscraper simulando ser un móvil Android para evitar bloqueos
-    scraper = cloudscraper.create_scraper(
-        browser={
-            'browser': 'chrome',
-            'platform': 'android',
-            'mobile': True
-        }
-    )
+    # Configuración anti-bloqueo estándar
+    scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
 
-    # URL V2 (API Móvil - Más rápida y menos bloqueada)
-    # Nota: Usamos la API 'v2' en lugar de 'coupon'
-    main_url = "https://www.bovada.lv/services/sports/event/v2/events/A/description/basketball/nba"
+    # URL que trae TODO (Vivo y Próximos)
+    main_url = "https://www.bovada.lv/services/sports/event/coupon/events/A/description/basketball/nba"
     
     try:
-        # Headers anti-caché para traer datos frescos
-        headers = {
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-            "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-        }
+        r = scraper.get(main_url, timeout=20)
         
-        r = scraper.get(main_url, headers=headers, timeout=15)
-        
+        # --- DIAGNÓSTICO VISUAL ---
+        # Si falla la conexión, devolvemos el error como si fuera un equipo para que lo veas en pantalla
+        if r.status_code == 403:
+            return pd.DataFrame([{
+                "Periodo": "ERROR", "Estado": "BLOQUEADO", 
+                "Local": "Bovada bloqueó la IP", "Visita": "Intenta más tarde", 
+                "Hándicap Local": 0, "Cuota": 0
+            }])
         if r.status_code != 200:
-            print(f"❌ Error conexión menú principal: {r.status_code}")
-            return pd.DataFrame()
-        
+            return pd.DataFrame([{
+                "Periodo": "ERROR", "Estado": f"Err {r.status_code}", 
+                "Local": "Fallo de Conexión", "Visita": "Revisar URL", 
+                "Hándicap Local": 0, "Cuota": 0
+            }])
+            
         main_data = r.json()
+        
     except Exception as e:
-        print(f"🔥 Error crítico: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame([{
+            "Periodo": "ERROR", "Estado": "CRITICO", 
+            "Local": "Error de Script", "Visita": str(e)[:50], 
+            "Hándicap Local": 0, "Cuota": 0
+        }])
 
-    # 2. Recorrer partidos
+    # Si la conexión fue buena, buscamos los partidos
+    events_found_count = 0
+    
     for coupon in main_data:
         if 'events' not in coupon: continue
         
         for event in coupon['events']:
+            events_found_count += 1
             title = event.get('description', 'Desconocido')
             link = event.get('link')
             is_live = event.get('live', False)
@@ -54,37 +58,19 @@ def get_bovada_odds():
                 if len(parts) == 2:
                     away_team, home_team = parts
                 else:
-                    # Si no hay @, asumimos formato "Visitante vs Local" o similar
                     away_team, home_team = "Visitante", "Local"
             except:
                 away_team, home_team = "Visitante", "Local"
 
-            events_to_process = [event]
-
-            # --- DEEP SCAN (Entrar al partido para ver mitades) ---
-            if link:
-                try:
-                    if not link.startswith('/'): link = f"/{link}"
-                    # URL V2 profunda
-                    deep_url = f"https://www.bovada.lv/services/sports/event/v2/events/A/description{link}"
-                    time.sleep(random.uniform(0.1, 0.4)) 
-                    
-                    r_deep = scraper.get(deep_url, timeout=10)
-                    if r_deep.status_code == 200:
-                        deep_data = r_deep.json()
-                        if deep_data and isinstance(deep_data, list) and 'events' in deep_data[0]:
-                            events_to_process = deep_data[0]['events']
-                except:
-                    pass 
-
-            # 3. Extraer cuotas
-            for ev in events_to_process:
-                if 'displayGroups' not in ev: continue
-                
-                for group in ev['displayGroups']:
+            # --- ESTRATEGIA: SIEMPRE GUARDAR GAME LINES (Juego Completo) ---
+            # Esto asegura que los partidos de mañana aparezcan
+            
+            # 1. Buscar en los grupos visuales directos (Lo más rápido)
+            if 'displayGroups' in event:
+                for group in event['displayGroups']:
                     raw_period = group.get('description', '')
                     
-                    # Normalizar periodos
+                    # Filtramos periodos
                     clean_period = None
                     if any(x in raw_period for x in ["1st Half", "1H"]): clean_period = "1st Half"
                     elif any(x in raw_period for x in ["2nd Half", "2H"]): clean_period = "2nd Half"
@@ -97,27 +83,24 @@ def get_bovada_odds():
                     if not clean_period: continue
 
                     for market in group['markets']:
+                        # Aceptamos Spread, Handicap, Run Line (beisbol/otros), etc.
                         desc = market.get('description', '')
-                        
-                        # Buscamos Spread (Hándicap)
                         if not any(x in desc for x in ["Spread", "Handicap", "Point Spread"]):
                             continue
 
                         for outcome in market['outcomes']:
                             price = outcome['price'].get('decimal')
                             handicap = outcome['price'].get('handicap')
-                            outcome_type = outcome.get('type') # 'H' o 'A'
+                            outcome_type = outcome.get('type')
                             
                             if not price or not handicap: continue
                             
+                            # Filtro de cuota amplio para detectar todo
                             try:
                                 f_price = float(price)
-                                # HE AMPLIADO EL RANGO: Ahora acepta de 1.50 a 2.50
-                                # Esto soluciona que te salgan líneas incorrectas o falten líneas
-                                if not (1.50 <= f_price <= 2.50): continue
                             except: continue
 
-                            # Detectar si es LOCAL
+                            # Detectar Local
                             es_local = False
                             if outcome_type == 'H': es_local = True
                             elif home_team in outcome.get('description', ''): es_local = True
@@ -126,12 +109,19 @@ def get_bovada_odds():
                             if es_local:
                                 all_odds.append({
                                     "Periodo": clean_period,
-                                    "Estado": "🔴 LIVE" if is_live else "🕒 Pre",
+                                    "Estado": "🔴 LIVE" if is_live else "📅 Futuro",
                                     "Local": home_team,
                                     "Visita": away_team,
                                     "Hándicap Local": float(handicap),
                                     "Cuota": f_price
                                 })
 
-    df = pd.DataFrame(all_odds)
-    return df
+    # Si no encontramos nada pero la conexión fue buena
+    if len(all_odds) == 0:
+        return pd.DataFrame([{
+            "Periodo": "INFO", "Estado": "VACIO", 
+            "Local": "Conectado OK", "Visita": f"0 juegos encontrados (Raw: {events_found_count})", 
+            "Hándicap Local": 0, "Cuota": 0
+        }])
+
+    return pd.DataFrame(all_odds)
