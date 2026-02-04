@@ -2,94 +2,101 @@ import requests
 import pandas as pd
 
 # ---------------------------------------------------------
-# CONFIGURACIÓN: PEGA TU API KEY ABAJO DENTRO DE LAS COMILLAS
-API_KEY = "TU_API_KEY_AQUI"
+# PEGA TU API KEY AQUÍ (Dentro de las comillas)
+API_KEY = "72503fba894cd3d0eb051071fce25d6c" 
 # ---------------------------------------------------------
 
 def get_bovada_odds():
-    all_odds = []
-    print("🚀 CONSULTANDO THE ODDS API (VÍA OFICIAL)...")
-
-    # 1. Configurar la petición a la API
-    # Pedimos NBA, casa 'bovada', y mercados de spreads (hándicap)
-    # Nota: El plan gratis permite consultar mercados principales.
+    # URL para NBA
     sport_key = 'basketball_nba'
-    
-    # URL oficial
     url = f'https://api.the-odds-api.com/v4/sports/{sport_key}/odds'
 
     params = {
         'api_key': API_KEY,
-        'regions': 'us',          # Región US para Bovada
-        'markets': 'spreads',     # Pedimos Hándicaps (Game Lines)
+        'regions': 'us',
+        'markets': 'spreads', # Hándicaps
         'oddsFormat': 'decimal',
-        'bookmakers': 'bovada'    # Solo queremos datos de Bovada
+        'bookmakers': 'bovada'
     }
 
     try:
         r = requests.get(url, params=params)
         
-        # --- DIAGNÓSTICO DE ERRORES ---
+        # --- DIAGNÓSTICO VISUAL (Para que lo veas en la pantalla) ---
+        
+        # Error de Clave (401)
         if r.status_code == 401:
-            print("❌ ERROR: La API Key es incorrecta o no se ha activado aún.")
-            return pd.DataFrame()
+            return pd.DataFrame([{
+                "Periodo": "ERROR", "Estado": "CLAVE INVALIDA",
+                "Local": "Revisa tu API Key", "Visita": "Copia y pega bien",
+                "Hándicap Local": 0, "Cuota": 0
+            }])
+
+        # Error de Cuota (429) - Se acabaron las peticiones gratis
         if r.status_code == 429:
-            print("❌ ERROR: Se acabó tu cuota mensual gratuita de la API.")
-            return pd.DataFrame()
+            return pd.DataFrame([{
+                "Periodo": "ERROR", "Estado": "CUOTA LLENA",
+                "Local": "Se acabaron los 500 requests", "Visita": "Usa otra cuenta/key",
+                "Hándicap Local": 0, "Cuota": 0
+            }])
+
+        # Otros errores de conexión
         if r.status_code != 200:
-            print(f"❌ Error de conexión con API: {r.status_code}")
-            return pd.DataFrame()
+            return pd.DataFrame([{
+                "Periodo": "ERROR", "Estado": f"Status {r.status_code}",
+                "Local": "Error de conexión", "Visita": r.text[:20],
+                "Hándicap Local": 0, "Cuota": 0
+            }])
 
         data = r.json()
 
     except Exception as e:
-        print(f"🔥 Error crítico: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame([{
+            "Periodo": "ERROR", "Estado": "CRITICO",
+            "Local": "Fallo Python", "Visita": str(e),
+            "Hándicap Local": 0, "Cuota": 0
+        }])
 
-    # 2. Procesar los datos limpios
-    print(f"✅ Datos recibidos. Procesando {len(data)} partidos...")
+    # Si la lista está vacía (Bovada no tiene líneas publicadas en la API)
+    if not data:
+        return pd.DataFrame([{
+            "Periodo": "INFO", "Estado": "SIN DATOS",
+            "Local": "La API funciona", "Visita": "Pero Bovada no da líneas hoy",
+            "Hándicap Local": 0, "Cuota": 0
+        }])
 
+    # Procesar datos si hay éxito
+    all_odds = []
     for game in data:
-        # Datos del partido
         home_team = game.get('home_team')
         away_team = game.get('away_team')
-        commence_time = game.get('commence_time') # Fecha/Hora inicio
         
-        # Buscar las cuotas de Bovada dentro del partido
-        bookmakers = game.get('bookmakers', [])
-        for book in bookmakers:
+        for book in game.get('bookmakers', []):
             if book['key'] == 'bovada':
                 for market in book['markets']:
                     if market['key'] == 'spreads':
                         for outcome in market['outcomes']:
-                            # outcome['name'] es el nombre del equipo
-                            # outcome['price'] es la cuota (ej. 1.90)
-                            # outcome['point'] es el hándicap (ej. -5.5)
-                            
                             team_name = outcome.get('name')
                             price = outcome.get('price')
                             point = outcome.get('point')
 
-                            # Identificar si es el Local
-                            es_local = False
-                            if team_name == home_team:
-                                es_local = True
-
+                            es_local = (team_name == home_team)
+                            
                             if es_local:
                                 all_odds.append({
-                                    "Periodo": "Game Lines", # La API básica da juego completo
-                                    "Estado": "✅ ACTIVO",
+                                    "Periodo": "Game Lines",
+                                    "Estado": "✅ API OK",
                                     "Local": home_team,
                                     "Visita": away_team,
                                     "Hándicap Local": float(point),
                                     "Cuota": float(price)
                                 })
 
-    df = pd.DataFrame(all_odds)
-    
-    if df.empty:
-        print("⚠️ La API respondió bien, pero no hay líneas de Bovada ahora mismo.")
-    else:
-        print(f"🏁 ÉXITO: {len(df)} líneas encontradas.")
+    if not all_odds:
+        return pd.DataFrame([{
+            "Periodo": "INFO", "Estado": "VACIO",
+            "Local": "Hay partidos", "Visita": "Pero no líneas de Bovada",
+            "Hándicap Local": 0, "Cuota": 0
+        }])
 
-    return df
+    return pd.DataFrame(all_odds)
