@@ -3,7 +3,7 @@ import pandas as pd
 
 # ---------------------------------------------------------
 # 🔴 PEGA TU API KEY AQUÍ (Dentro de las comillas)
-API_KEY = "72503fba894cd3d0eb051071fce25d6c" 
+API_KEY = "df28f2f3c24ae0bbc3b76cfc79296683" 
 # ---------------------------------------------------------
 
 def get_bovada_odds():
