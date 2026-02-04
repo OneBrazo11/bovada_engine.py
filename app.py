@@ -65,8 +65,7 @@ def get_pinnacle_data(api_key, market_key):
     try:
         return requests.get(url, params=params).json()
     except: return []
-
-# --- LÓGICA PRINCIPAL ---
+        # --- LÓGICA PRINCIPAL ---
 st.title(f"🏀 NBA LIVE HUNTER: {modo}")
 
 if btn_scan and api_key:
@@ -102,7 +101,7 @@ if btn_scan and api_key:
 
     # Recorrer Pinnacle
     if isinstance(pin_data, list):
-        for event in pin_data:  # <--- AQUÍ ESTABA EL ERROR (Faltaban los dos puntos)
+        for event in pin_data:  # <--- AQUÍ ESTABA EL ERROR ANTES (YA TIENE :)
             home = event['home_team']
             
             # Buscar línea Pinnacle
@@ -111,3 +110,40 @@ if btn_scan and api_key:
                 if book['key'] == 'pinnacle':
                     if book['markets']:
                         for out in book['markets'][0]['outcomes']:
+                            if out['name'] == home:
+                                pin_line = out.get('point')
+            
+            if pin_line is None: continue
+            
+            # Cruzar con Bovada
+            norm_home = normalize_name(home)
+            if norm_home in bov_map:
+                bov_row = bov_map[norm_home]
+                bov_line = bov_row['Hándicap Local']
+                
+                try:
+                    diff = abs(float(pin_line) - float(bov_line))
+                    if diff >= min_diff:
+                        opportunities.append({
+                            "Partido": f"{home} vs {bov_row['Visita']}",
+                            "Periodo": seleccion['bovada'],
+                            "Local": home,
+                            "🏛️ Pin": float(pin_line),
+                            "🎯 Bov": float(bov_line),
+                            "💰 DIFF": round(diff, 2)
+                        })
+                except: continue
+
+    # 3. MOSTRAR RESULTADOS
+    if opportunities:
+        st.markdown(f"### 🔥 {len(opportunities)} OPORTUNIDADES DETECTADAS")
+        
+        # Tabla limpia (sin estilos complejos que causan error)
+        st.dataframe(pd.DataFrame(opportunities), use_container_width=True)
+        
+        for op in opportunities:
+            st.error(f"🚨 **{op['Local']}**: Pinnacle **{op['🏛️ Pin']}** vs Bovada **{op['🎯 Bov']}** (Diff: {op['💰 DIFF']})")
+    else:
+        st.info(f"✅ Mercado eficiente en {modo}. No hay diferencias grandes.")
+        with st.expander("Ver datos crudos de Bovada (Debug)"):
+            st.dataframe(bov_target)
