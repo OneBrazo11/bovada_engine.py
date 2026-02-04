@@ -1,127 +1,95 @@
-import cloudscraper
+import requests
 import pandas as pd
-import time
-import random
+
+# ---------------------------------------------------------
+# CONFIGURACIÓN: PEGA TU API KEY ABAJO DENTRO DE LAS COMILLAS
+API_KEY = "TU_API_KEY_AQUI"
+# ---------------------------------------------------------
 
 def get_bovada_odds():
     all_odds = []
-    print("🚀 INICIANDO ESCANEO DIAGNÓSTICO...")
+    print("🚀 CONSULTANDO THE ODDS API (VÍA OFICIAL)...")
 
-    # Configuración anti-bloqueo estándar
-    scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
-
-    # URL que trae TODO (Vivo y Próximos)
-    main_url = "https://www.bovada.lv/services/sports/event/coupon/events/A/description/basketball/nba"
+    # 1. Configurar la petición a la API
+    # Pedimos NBA, casa 'bovada', y mercados de spreads (hándicap)
+    # Nota: El plan gratis permite consultar mercados principales.
+    sport_key = 'basketball_nba'
     
+    # URL oficial
+    url = f'https://api.the-odds-api.com/v4/sports/{sport_key}/odds'
+
+    params = {
+        'api_key': API_KEY,
+        'regions': 'us',          # Región US para Bovada
+        'markets': 'spreads',     # Pedimos Hándicaps (Game Lines)
+        'oddsFormat': 'decimal',
+        'bookmakers': 'bovada'    # Solo queremos datos de Bovada
+    }
+
     try:
-        r = scraper.get(main_url, timeout=20)
+        r = requests.get(url, params=params)
         
-        # --- DIAGNÓSTICO VISUAL ---
-        # Si falla la conexión, devolvemos el error como si fuera un equipo para que lo veas en pantalla
-        if r.status_code == 403:
-            return pd.DataFrame([{
-                "Periodo": "ERROR", "Estado": "BLOQUEADO", 
-                "Local": "Bovada bloqueó la IP", "Visita": "Intenta más tarde", 
-                "Hándicap Local": 0, "Cuota": 0
-            }])
+        # --- DIAGNÓSTICO DE ERRORES ---
+        if r.status_code == 401:
+            print("❌ ERROR: La API Key es incorrecta o no se ha activado aún.")
+            return pd.DataFrame()
+        if r.status_code == 429:
+            print("❌ ERROR: Se acabó tu cuota mensual gratuita de la API.")
+            return pd.DataFrame()
         if r.status_code != 200:
-            return pd.DataFrame([{
-                "Periodo": "ERROR", "Estado": f"Err {r.status_code}", 
-                "Local": "Fallo de Conexión", "Visita": "Revisar URL", 
-                "Hándicap Local": 0, "Cuota": 0
-            }])
-            
-        main_data = r.json()
-        
+            print(f"❌ Error de conexión con API: {r.status_code}")
+            return pd.DataFrame()
+
+        data = r.json()
+
     except Exception as e:
-        return pd.DataFrame([{
-            "Periodo": "ERROR", "Estado": "CRITICO", 
-            "Local": "Error de Script", "Visita": str(e)[:50], 
-            "Hándicap Local": 0, "Cuota": 0
-        }])
+        print(f"🔥 Error crítico: {e}")
+        return pd.DataFrame()
 
-    # Si la conexión fue buena, buscamos los partidos
-    events_found_count = 0
-    
-    for coupon in main_data:
-        if 'events' not in coupon: continue
+    # 2. Procesar los datos limpios
+    print(f"✅ Datos recibidos. Procesando {len(data)} partidos...")
+
+    for game in data:
+        # Datos del partido
+        home_team = game.get('home_team')
+        away_team = game.get('away_team')
+        commence_time = game.get('commence_time') # Fecha/Hora inicio
         
-        for event in coupon['events']:
-            events_found_count += 1
-            title = event.get('description', 'Desconocido')
-            link = event.get('link')
-            is_live = event.get('live', False)
-            
-            # Limpieza de nombres
-            try:
-                parts = title.split(' @ ')
-                if len(parts) == 2:
-                    away_team, home_team = parts
-                else:
-                    away_team, home_team = "Visitante", "Local"
-            except:
-                away_team, home_team = "Visitante", "Local"
-
-            # --- ESTRATEGIA: SIEMPRE GUARDAR GAME LINES (Juego Completo) ---
-            # Esto asegura que los partidos de mañana aparezcan
-            
-            # 1. Buscar en los grupos visuales directos (Lo más rápido)
-            if 'displayGroups' in event:
-                for group in event['displayGroups']:
-                    raw_period = group.get('description', '')
-                    
-                    # Filtramos periodos
-                    clean_period = None
-                    if any(x in raw_period for x in ["1st Half", "1H"]): clean_period = "1st Half"
-                    elif any(x in raw_period for x in ["2nd Half", "2H"]): clean_period = "2nd Half"
-                    elif any(x in raw_period for x in ["1st Quarter", "1Q"]): clean_period = "1st Quarter"
-                    elif any(x in raw_period for x in ["2nd Quarter", "2Q"]): clean_period = "2nd Quarter"
-                    elif any(x in raw_period for x in ["3rd Quarter", "3Q"]): clean_period = "3rd Quarter"
-                    elif any(x in raw_period for x in ["4th Quarter", "4Q"]): clean_period = "4th Quarter"
-                    elif "Game Lines" in raw_period: clean_period = "Game Lines"
-                    
-                    if not clean_period: continue
-
-                    for market in group['markets']:
-                        # Aceptamos Spread, Handicap, Run Line (beisbol/otros), etc.
-                        desc = market.get('description', '')
-                        if not any(x in desc for x in ["Spread", "Handicap", "Point Spread"]):
-                            continue
-
+        # Buscar las cuotas de Bovada dentro del partido
+        bookmakers = game.get('bookmakers', [])
+        for book in bookmakers:
+            if book['key'] == 'bovada':
+                for market in book['markets']:
+                    if market['key'] == 'spreads':
                         for outcome in market['outcomes']:
-                            price = outcome['price'].get('decimal')
-                            handicap = outcome['price'].get('handicap')
-                            outcome_type = outcome.get('type')
+                            # outcome['name'] es el nombre del equipo
+                            # outcome['price'] es la cuota (ej. 1.90)
+                            # outcome['point'] es el hándicap (ej. -5.5)
                             
-                            if not price or not handicap: continue
-                            
-                            # Filtro de cuota amplio para detectar todo
-                            try:
-                                f_price = float(price)
-                            except: continue
+                            team_name = outcome.get('name')
+                            price = outcome.get('price')
+                            point = outcome.get('point')
 
-                            # Detectar Local
+                            # Identificar si es el Local
                             es_local = False
-                            if outcome_type == 'H': es_local = True
-                            elif home_team in outcome.get('description', ''): es_local = True
-                            elif "Home" in outcome.get('description', ''): es_local = True
+                            if team_name == home_team:
+                                es_local = True
 
                             if es_local:
                                 all_odds.append({
-                                    "Periodo": clean_period,
-                                    "Estado": "🔴 LIVE" if is_live else "📅 Futuro",
+                                    "Periodo": "Game Lines", # La API básica da juego completo
+                                    "Estado": "✅ ACTIVO",
                                     "Local": home_team,
                                     "Visita": away_team,
-                                    "Hándicap Local": float(handicap),
-                                    "Cuota": f_price
+                                    "Hándicap Local": float(point),
+                                    "Cuota": float(price)
                                 })
 
-    # Si no encontramos nada pero la conexión fue buena
-    if len(all_odds) == 0:
-        return pd.DataFrame([{
-            "Periodo": "INFO", "Estado": "VACIO", 
-            "Local": "Conectado OK", "Visita": f"0 juegos encontrados (Raw: {events_found_count})", 
-            "Hándicap Local": 0, "Cuota": 0
-        }])
+    df = pd.DataFrame(all_odds)
+    
+    if df.empty:
+        print("⚠️ La API respondió bien, pero no hay líneas de Bovada ahora mismo.")
+    else:
+        print(f"🏁 ÉXITO: {len(df)} líneas encontradas.")
 
-    return pd.DataFrame(all_odds)
+    return df
