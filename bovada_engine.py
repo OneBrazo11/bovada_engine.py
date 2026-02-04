@@ -59,10 +59,26 @@ def get_bovada_odds():
                             line_away = None
                             price_away = None
                             
+                            # --- BLOQUE MEJORADO CON FILTRO DE CALIDAD ---
                             for outcome in market['outcomes']:
                                 current_price = outcome['price'].get('decimal')
                                 current_handicap = outcome['price'].get('handicap')
-                                team_desc = outcome['description'] # "(LAL) Lakers"
+                                team_desc = outcome['description'] 
+                                
+                                # FILTRO ANTI-RUIDO: 
+                                # Solo aceptamos líneas "estándar" (cuotas entre 1.80 y 2.10)
+                                # Esto elimina las líneas alternativas de +28 puntos que ensucian tu tabla.
+                                if not (1.80 <= float(current_price) <= 2.20):
+                                    continue 
+
+                                # Asignar a Local o Visita
+                                if team_desc == 'Home' or home_team in team_desc:
+                                    line_home = current_handicap
+                                    price_home = current_price
+                                elif team_desc == 'Away' or away_team in team_desc:
+                                    line_away = current_handicap
+                                    price_away = current_price
+                            # ---------------------------------------------
                                 
                                 # Asignar a Local o Visita (Lógica simple de coincidencia)
                                 if team_desc == 'Home' or home_team in team_desc:
