@@ -7,13 +7,14 @@ def get_bovada_odds():
     all_odds = []
     print("🚀 INICIANDO ESCANEO BOVADA (MODO CLOUD)...")
 
-    # Creamos el navegador falso que salta el bloqueo
+    # Creamos el navegador falso
     scraper = cloudscraper.create_scraper()
 
     # 1. Obtener Menú Principal
     main_url = "https://www.bovada.lv/services/sports/event/coupon/events/A/description/basketball/nba"
     
     try:
+        # Usamos scraper en lugar de requests
         r = scraper.get(main_url, timeout=15)
         if r.status_code != 200:
             print(f"❌ Error conexión menú principal: {r.status_code}")
@@ -32,7 +33,7 @@ def get_bovada_odds():
             link = event.get('link')
             is_live = event.get('live', False)
             
-            # Limpieza de nombres de equipos
+            # Limpieza básica de nombres
             try:
                 parts = title.split(' @ ')
                 if len(parts) == 2:
@@ -42,7 +43,6 @@ def get_bovada_odds():
             except:
                 away_team, home_team = "Visitante", "Local"
 
-            # Lista de eventos a procesar (empezamos con el básico)
             events_to_process = [event]
 
             # --- DEEP SCAN (Para cuartos y mitades) ---
@@ -50,10 +50,7 @@ def get_bovada_odds():
                 try:
                     if not link.startswith('/'): link = f"/{link}"
                     deep_url = f"https://www.bovada.lv/services/sports/event/coupon/events/A/description{link}"
-                    
-                    # Pausa pequeña
-                    time.sleep(random.uniform(0.1, 0.3))
-                    
+                    time.sleep(random.uniform(0.1, 0.3)) # Pequeña pausa
                     r_deep = scraper.get(deep_url, timeout=10)
                     if r_deep.status_code == 200:
                         deep_data = r_deep.json()
@@ -94,9 +91,9 @@ def get_bovada_odds():
                             
                             if not price or not handicap: continue
                             
-                            # Filtro cuota
                             try:
                                 f_price = float(price)
+                                # Filtro cuota jugable
                                 if not (1.70 <= f_price <= 2.30): continue
                             except: continue
 
