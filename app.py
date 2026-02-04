@@ -67,7 +67,7 @@ def get_pinnacle_data(api_key, market_key):
     except: return []
 
 # --- LÓGICA PRINCIPAL ---
-st.title(f"📡 RADAR: {modo}")
+st.title(f"🏀 NBA LIVE HUNTER: {modo}")
 
 if btn_scan and api_key:
     # 1. OBTENCIÓN DE DATOS
@@ -102,4 +102,12 @@ if btn_scan and api_key:
 
     # Recorrer Pinnacle
     if isinstance(pin_data, list):
-        for event in pin_data
+        for event in pin_data:  # <--- AQUÍ ESTABA EL ERROR (Faltaban los dos puntos)
+            home = event['home_team']
+            
+            # Buscar línea Pinnacle
+            pin_line = None
+            for book in event['bookmakers']:
+                if book['key'] == 'pinnacle':
+                    if book['markets']:
+                        for out in book['markets'][0]['outcomes']:
