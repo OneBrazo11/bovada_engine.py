@@ -2,20 +2,17 @@ import requests
 import pandas as pd
 
 # ---------------------------------------------------------
-# 🔴 MAÑANA: PEGA TU NUEVA API KEY AQUÍ (Dentro de las comillas)
+# 🔴 PEGA TU API KEY AQUÍ (Dentro de las comillas)
 API_KEY = "72503fba894cd3d0eb051071fce25d6c" 
 # ---------------------------------------------------------
 
 def get_bovada_odds():
-    print("🚀 CONSULTANDO API (V7 - TODO: H2H, SPREAD, TOTALES, MITADES, CUARTOS)...")
+    print("🚀 CONSULTANDO API (FULL: H2H, SPREAD, TOTALES, MITADES, CUARTOS)...")
     
     sport_key = 'basketball_nba'
     url = f'https://api.the-odds-api.com/v4/sports/{sport_key}/odds'
 
     # SOLICITAMOS LA LISTA COMPLETA DE MERCADOS
-    # h2h = Ganador
-    # spreads = Hándicap
-    # totals = Totales (Over/Under)
     markets_list = (
         "h2h,spreads,totals,"               # Juego Completo
         "h2h_h1,spreads_h1,totals_h1,"      # 1ra Mitad
@@ -39,7 +36,7 @@ def get_bovada_odds():
         
         # --- DIAGNÓSTICO DE ERRORES ---
         if r.status_code == 401:
-            return pd.DataFrame([{"Periodo": "ERROR", "Tipo": "KEY", "Local": "Tu API Key nueva", "Visita": "no es válida", "Dato": 0, "Cuota": 0}])
+            return pd.DataFrame([{"Periodo": "ERROR", "Tipo": "KEY", "Local": "Tu API Key", "Visita": "no es válida", "Dato": 0, "Cuota": 0}])
         if r.status_code == 429:
             return pd.DataFrame([{"Periodo": "ERROR", "Tipo": "QUOTA", "Local": "Se acabaron los créditos", "Visita": "Crea otra cuenta", "Dato": 0, "Cuota": 0}])
         if r.status_code != 200:
@@ -69,4 +66,10 @@ def get_bovada_odds():
                     # 1. IDENTIFICAR PERIODO
                     period_name = "Full Time"
                     if "h1" in key: period_name = "1st Half"
-                    elif "h2"
+                    elif "h2" in key: period_name = "2nd Half"
+                    elif "q1" in key: period_name = "1st Quarter"
+                    elif "q2" in key: period_name = "2nd Quarter"
+                    elif "q3" in key: period_name = "3rd Quarter"
+                    elif "q4" in key: period_name = "4th Quarter"
+
+                    # 2. IDENTIFICAR TIPO DE APUE
