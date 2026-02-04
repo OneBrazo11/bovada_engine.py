@@ -2,19 +2,34 @@ import requests
 import pandas as pd
 
 # ---------------------------------------------------------
-# PEGA TU API KEY AQUÍ (Dentro de las comillas)
+# 🔴 MAÑANA: PEGA TU NUEVA API KEY AQUÍ (Dentro de las comillas)
 API_KEY = "72503fba894cd3d0eb051071fce25d6c" 
 # ---------------------------------------------------------
 
 def get_bovada_odds():
-    # URL para NBA
+    print("🚀 CONSULTANDO API (V7 - TODO: H2H, SPREAD, TOTALES, MITADES, CUARTOS)...")
+    
     sport_key = 'basketball_nba'
     url = f'https://api.the-odds-api.com/v4/sports/{sport_key}/odds'
+
+    # SOLICITAMOS LA LISTA COMPLETA DE MERCADOS
+    # h2h = Ganador
+    # spreads = Hándicap
+    # totals = Totales (Over/Under)
+    markets_list = (
+        "h2h,spreads,totals,"               # Juego Completo
+        "h2h_h1,spreads_h1,totals_h1,"      # 1ra Mitad
+        "h2h_h2,spreads_h2,totals_h2,"      # 2da Mitad
+        "h2h_q1,spreads_q1,totals_q1,"      # 1er Cuarto
+        "h2h_q2,spreads_q2,totals_q2,"      # 2do Cuarto
+        "h2h_q3,spreads_q3,totals_q3,"      # 3er Cuarto
+        "h2h_q4,spreads_q4,totals_q4"       # 4to Cuarto
+    )
 
     params = {
         'api_key': API_KEY,
         'regions': 'us',
-        'markets': 'spreads', # Hándicaps
+        'markets': markets_list, 
         'oddsFormat': 'decimal',
         'bookmakers': 'bovada'
     }
@@ -22,51 +37,25 @@ def get_bovada_odds():
     try:
         r = requests.get(url, params=params)
         
-        # --- DIAGNÓSTICO VISUAL (Para que lo veas en la pantalla) ---
-        
-        # Error de Clave (401)
+        # --- DIAGNÓSTICO DE ERRORES ---
         if r.status_code == 401:
-            return pd.DataFrame([{
-                "Periodo": "ERROR", "Estado": "CLAVE INVALIDA",
-                "Local": "Revisa tu API Key", "Visita": "Copia y pega bien",
-                "Hándicap Local": 0, "Cuota": 0
-            }])
-
-        # Error de Cuota (429) - Se acabaron las peticiones gratis
+            return pd.DataFrame([{"Periodo": "ERROR", "Tipo": "KEY", "Local": "Tu API Key nueva", "Visita": "no es válida", "Dato": 0, "Cuota": 0}])
         if r.status_code == 429:
-            return pd.DataFrame([{
-                "Periodo": "ERROR", "Estado": "CUOTA LLENA",
-                "Local": "Se acabaron los 500 requests", "Visita": "Usa otra cuenta/key",
-                "Hándicap Local": 0, "Cuota": 0
-            }])
-
-        # Otros errores de conexión
+            return pd.DataFrame([{"Periodo": "ERROR", "Tipo": "QUOTA", "Local": "Se acabaron los créditos", "Visita": "Crea otra cuenta", "Dato": 0, "Cuota": 0}])
         if r.status_code != 200:
-            return pd.DataFrame([{
-                "Periodo": "ERROR", "Estado": f"Status {r.status_code}",
-                "Local": "Error de conexión", "Visita": r.text[:20],
-                "Hándicap Local": 0, "Cuota": 0
-            }])
+            return pd.DataFrame([{"Periodo": "ERROR", "Tipo": f"HTTP {r.status_code}", "Local": "Fallo Conexión", "Visita": "...", "Dato": 0, "Cuota": 0}])
 
         data = r.json()
 
     except Exception as e:
-        return pd.DataFrame([{
-            "Periodo": "ERROR", "Estado": "CRITICO",
-            "Local": "Fallo Python", "Visita": str(e),
-            "Hándicap Local": 0, "Cuota": 0
-        }])
+        return pd.DataFrame([{"Periodo": "ERROR", "Tipo": "CRITICO", "Local": "Error Script", "Visita": str(e), "Dato": 0, "Cuota": 0}])
 
-    # Si la lista está vacía (Bovada no tiene líneas publicadas en la API)
-    if not data:
-        return pd.DataFrame([{
-            "Periodo": "INFO", "Estado": "SIN DATOS",
-            "Local": "La API funciona", "Visita": "Pero Bovada no da líneas hoy",
-            "Hándicap Local": 0, "Cuota": 0
-        }])
-
-    # Procesar datos si hay éxito
+    # Procesar los datos
     all_odds = []
+    
+    if not data:
+        return pd.DataFrame([{"Periodo": "INFO", "Tipo": "VACIO", "Local": "API Conectada", "Visita": "Sin líneas publicadas", "Dato": 0, "Cuota": 0}])
+
     for game in data:
         home_team = game.get('home_team')
         away_team = game.get('away_team')
@@ -74,29 +63,10 @@ def get_bovada_odds():
         for book in game.get('bookmakers', []):
             if book['key'] == 'bovada':
                 for market in book['markets']:
-                    if market['key'] == 'spreads':
-                        for outcome in market['outcomes']:
-                            team_name = outcome.get('name')
-                            price = outcome.get('price')
-                            point = outcome.get('point')
-
-                            es_local = (team_name == home_team)
-                            
-                            if es_local:
-                                all_odds.append({
-                                    "Periodo": "Game Lines",
-                                    "Estado": "✅ API OK",
-                                    "Local": home_team,
-                                    "Visita": away_team,
-                                    "Hándicap Local": float(point),
-                                    "Cuota": float(price)
-                                })
-
-    if not all_odds:
-        return pd.DataFrame([{
-            "Periodo": "INFO", "Estado": "VACIO",
-            "Local": "Hay partidos", "Visita": "Pero no líneas de Bovada",
-            "Hándicap Local": 0, "Cuota": 0
-        }])
-
-    return pd.DataFrame(all_odds)
+                    
+                    key = market['key']
+                    
+                    # 1. IDENTIFICAR PERIODO
+                    period_name = "Full Time"
+                    if "h1" in key: period_name = "1st Half"
+                    elif "h2"
