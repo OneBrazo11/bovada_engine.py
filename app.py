@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-import bovada_engine  # Tu motor actualizado
+import bovada_engine  # Tu motor de datos
 
 # --- CONFIGURACIÓN ---
 st.set_page_config(layout="wide", page_title="NBA LIVE HUNTER", page_icon="🏀")
@@ -19,37 +19,26 @@ with st.sidebar:
     
     st.divider()
     
-    # --- EL SELECTOR MÁGICO ---
-    # Mapea lo que ve Bovada vs lo que pide la API de Pinnacle
+    # --- SELECTOR DE CAZA (COMPLETO) ---
     modo = st.selectbox("🎯 ¿Qué cazamos hoy?", [
         "Partido Completo (Full Game)",
         "1er Cuarto (1Q)",
         "2do Cuarto (2Q)",
+        "3er Cuarto (3Q)",
+        "4to Cuarto (4Q)",
         "1ra Mitad (1H)",
         "2da Mitad (2H)"
     ])
     
-# --- EL SELECTOR MÁGICO (ACTUALIZADO CON TODO) ---
-    modo = st.selectbox("🎯 ¿Qué cazamos hoy?", [
-        "Partido Completo (Full Game)",
-        "1er Cuarto (1Q)",
-        "2do Cuarto (2Q)",
-        "3er Cuarto (3Q)",  # <--- NUEVO
-        "4to Cuarto (4Q)",  # <--- NUEVO
-        "1ra Mitad (1H)",
-        "2da Mitad (2H)"
-    ])
-    
-    # Configuración interna mapeada
+    # Configuración técnica: Bovada vs Pinnacle API
     config_map = {
         "Partido Completo (Full Game)": {"bovada": "Game Lines", "api": "spreads"},
         "1er Cuarto (1Q)":             {"bovada": "1st Quarter", "api": "spreads_q1"},
         "2do Cuarto (2Q)":             {"bovada": "2nd Quarter", "api": "spreads_q2"},
-        "3er Cuarto (3Q)":             {"bovada": "3rd Quarter", "api": "spreads_q3"}, # <--- NUEVO
-        "4to Cuarto (4Q)":             {"bovada": "4th Quarter", "api": "spreads_q4"}, # <--- NUEVO
+        "3er Cuarto (3Q)":             {"bovada": "3rd Quarter", "api": "spreads_q3"},
+        "4to Cuarto (4Q)":             {"bovada": "4th Quarter", "api": "spreads_q4"},
         "1ra Mitad (1H)":              {"bovada": "1st Half",    "api": "spreads_h1"},
         "2da Mitad (2H)":              {"bovada": "2nd Half",    "api": "spreads_h2"}
-    }
     }
     
     seleccion = config_map[modo]
@@ -64,12 +53,12 @@ def normalize_name(name):
     return name.replace("L.A.", "LA").replace("Utd", "United").strip().lower()
 
 def get_pinnacle_data(api_key, market_key):
-    """Pide a Pinnacle solo el mercado que seleccionaste"""
+    """Pide a Pinnacle solo el mercado específico"""
     url = "https://api.the-odds-api.com/v4/sports/basketball_nba/odds"
     params = {
         'apiKey': api_key,
-        'regions': 'eu',
-        'markets': market_key, # Dinámico: spreads, spreads_q1, etc.
+        'regions': 'eu', # Pinnacle suele estar en zona EU en esta API
+        'markets': market_key,
         'oddsFormat': 'decimal',
         'bookmakers': 'pinnacle'
     }
@@ -77,7 +66,7 @@ def get_pinnacle_data(api_key, market_key):
         return requests.get(url, params=params).json()
     except: return []
 
-# --- MOTOR PRINCIPAL ---
+# --- LÓGICA PRINCIPAL ---
 st.title(f"📡 RADAR: {modo}")
 
 if btn_scan and api_key:
@@ -90,8 +79,7 @@ if btn_scan and api_key:
         st.write("2. Infiltrando Bovada (Todos los periodos)...")
         bov_all_df = bovada_engine.get_bovada_odds()
         
-        # FILTRADO INTELIGENTE
-        # De todo lo que trajo Bovada, nos quedamos solo con el periodo seleccionado
+        # FILTRADO: Nos quedamos solo con el periodo seleccionado
         if not bov_all_df.empty:
             bov_target = bov_all_df[bov_all_df['Periodo'] == seleccion['bovada']]
         else:
@@ -114,49 +102,4 @@ if btn_scan and api_key:
 
     # Recorrer Pinnacle
     if isinstance(pin_data, list):
-        for event in pin_data:
-            home = event['home_team']
-            
-            # Buscar línea Pinnacle
-            pin_line = None
-            for book in event['bookmakers']:
-                if book['key'] == 'pinnacle':
-                    if book['markets']:
-                        for out in book['markets'][0]['outcomes']:
-                            if out['name'] == home:
-                                pin_line = out.get('point')
-            
-            if pin_line is None: continue
-            
-            # Cruzar con Bovada
-            norm_home = normalize_name(home)
-            if norm_home in bov_map:
-                bov_row = bov_map[norm_home]
-                bov_line = bov_row['Hándicap Local']
-                
-                try:
-                    diff = abs(float(pin_line) - float(bov_line))
-                    if diff >= min_diff:
-                        opportunities.append({
-                            "Partido": f"{home} vs {bov_row['Visita']}",
-                            "Periodo": seleccion['bovada'], # Muestra qué cuarto es
-                            "Local": home,
-                            "🏛️ Pin": float(pin_line),
-                            "🎯 Bov": float(bov_line),
-                            "💰 DIFF": round(diff, 2)
-                        })
-                except: continue
-
-    # 3. RESULTADOS
-    if opportunities:
-        st.markdown(f"### 🔥 {len(opportunities)} OPORTUNIDADES ENCONTRADAS")
-        
-        # Tabla simple (Sin colores para evitar errores de matplotlib)
-        st.dataframe(pd.DataFrame(opportunities), use_container_width=True)
-        
-        for op in opportunities:
-            st.error(f"🚨 **{op['Local']}**: Pinnacle **{op['🏛️ Pin']}** vs Bovada **{op['🎯 Bov']}** (Diff: {op['💰 DIFF']})")
-    else:
-        st.info(f"Mercado eficiente. No hay errores en {modo}.")
-        with st.expander("Ver datos crudos de Bovada (Debug)"):
-            st.dataframe(bov_target)
+        for event in pin_data
