@@ -1,8 +1,7 @@
 import requests
 import pandas as pd
-import time
 
-# URL "Secreta" de Bovada (API Pública JSON)
+# URL API Pública de Bovada
 BOVADA_URL = "https://www.bovada.lv/services/sports/event/coupon/events/A/description/basketball/nba"
 
 HEADERS = {
@@ -11,108 +10,67 @@ HEADERS = {
 }
 
 def get_bovada_odds():
-    print("🎯 Conectando con servidores de Bovada...")
     try:
         r = requests.get(BOVADA_URL, headers=HEADERS, timeout=10)
+        if r.status_code != 200: return pd.DataFrame()
         
-        if r.status_code != 200:
-            return []
-
         data = r.json()
         clean_odds = []
         
-        # Bovada devuelve una lista de "Coupons" (Grupos de eventos)
+        # Periodos válidos que nos interesan
+        valid_periods = ["Game Lines", "1st Quarter", "2nd Quarter", "3rd Quarter", "4th Quarter", "1st Half", "2nd Half"]
+        
         for coupon in data:
             if 'events' not in coupon: continue
             
             for event in coupon['events']:
-                # 1. Datos Básicos del Evento
-                game_id = event['id']
-                description = event['description'] # Ej: "Lakers @ Celtics"
-                is_live = event.get('live', False)
-                start_time = event['startTime']
-                
-                # Separar equipos (Bovada suele poner "Away @ Home")
+                description = event['description'] 
                 teams = description.split(' @ ')
-                if len(teams) != 2: continue # Saltamos formatos raros
-                away_team, home_team = teams
+                if len(teams) != 2: continue
+                away_team, home_team = teams # Bovada suele poner Away @ Home
+                is_live = event.get('live', False)
                 
-                # 2. Buscar Mercados (Display Groups)
-                # Bovada agrupa por "Game Lines", "1st Quarter", etc.
+                # Recorremos TODOS los grupos de apuestas
                 for group in event['displayGroups']:
-                    
-                    # FILTRO: Aquí decidimos qué periodo nos interesa.
-                    # Por defecto buscamos 'Game Lines' (Partido Completo)
-                    # Si quieres cuartos, busca '1st Quarter', '2nd Quarter', etc.
                     period_name = group.get('description', '')
                     
-                    # Vamos a capturar SOLO líneas principales para probar
-                    if period_name != "Game Lines": 
-                        continue 
-
+                    # FILTRO: Solo guardamos si es uno de los periodos válidos
+                    if period_name not in valid_periods:
+                        continue
+                        
                     for market in group['markets']:
-                        # 3. Extraer HÁNDICAP (Point Spread)
+                        # Buscamos SOLO Hándicaps (Point Spread)
                         if market['description'] == "Point Spread":
-                            # Bovada tiene outcomes: [Away, Home]
-                            line_home = None
-                            price_home = None
-                            line_away = None
-                            price_away = None
+                            line_home, price_home = None, None
                             
-                            # --- BLOQUE MEJORADO CON FILTRO DE CALIDAD ---
                             for outcome in market['outcomes']:
                                 current_price = outcome['price'].get('decimal')
                                 current_handicap = outcome['price'].get('handicap')
-                                team_desc = outcome['description'] 
+                                team_desc = outcome['description']
                                 
-                                # FILTRO ANTI-RUIDO: 
-                                # Solo aceptamos líneas "estándar" (cuotas entre 1.80 y 2.10)
-                                # Esto elimina las líneas alternativas de +28 puntos que ensucian tu tabla.
-                                if not (1.80 <= float(current_price) <= 2.20):
-                                    continue 
-
-                                # Asignar a Local o Visita
+                                # FILTRO DE CALIDAD: Ignorar cuotas basura (menores a 1.80 o mayores a 2.20)
+                                if not current_price: continue
+                                try:
+                                    if not (1.75 <= float(current_price) <= 2.25): continue
+                                except: continue
+                                
+                                # Asignar a Local
                                 if team_desc == 'Home' or home_team in team_desc:
                                     line_home = current_handicap
                                     price_home = current_price
-                                elif team_desc == 'Away' or away_team in team_desc:
-                                    line_away = current_handicap
-                                    price_away = current_price
-                            # ---------------------------------------------
-                                
-                                # Asignar a Local o Visita (Lógica simple de coincidencia)
-                                if team_desc == 'Home' or home_team in team_desc:
-                                    line_home = current_handicap
-                                    price_home = current_price
-                                elif team_desc == 'Away' or away_team in team_desc:
-                                    line_away = current_handicap
-                                    price_away = current_price
                             
-                            # Guardamos la data si está completa
+                            # Guardamos si encontramos línea válida
                             if line_home is not None:
                                 clean_odds.append({
-                                    "Casa": "Bovada",
+                                    "Periodo": period_name, # Aquí guardamos si es "Game Lines" o "1st Quarter"
                                     "Estado": "🔴 LIVE" if is_live else "🕒 Pre",
                                     "Local": home_team,
                                     "Visita": away_team,
-                                    "Periodo": "Full Time", # Cambiar si filtras cuartos
-                                    "Hándicap Local": line_home,
-                                    "Cuota Local": price_home,
-                                    "Hándicap Visita": line_away,
-                                    "Cuota Visita": price_away
+                                    "Hándicap Local": float(line_home),
+                                    "Cuota": float(price_home)
                                 })
-
+                                
         return pd.DataFrame(clean_odds)
 
     except Exception as e:
-        print(f"🔥 Error en Bovada Engine: {e}")
-        return []
-
-# --- ZONA DE PRUEBAS (Solo se ejecuta si corres este archivo directo) ---
-if __name__ == "__main__":
-    df = get_bovada_odds()
-    if not df.empty:
-        print("\n✅ ¡DATOS EXTRAÍDOS DE BOVADA!")
-        print(df.to_string(index=False))
-    else:
-        print("\n⚠️ No se encontraron líneas (o no hay partidos NBA activos).")
+        return pd.DataFrame()
