@@ -5,20 +5,35 @@ import random
 
 def get_bovada_odds():
     all_odds = []
-    print("🚀 INICIANDO ESCANEO BOVADA (MODO CLOUD)...")
+    print("🚀 INICIANDO ESCANEO BOVADA (MODO MÓVIL V2)...")
 
-    # Creamos el navegador falso
-    scraper = cloudscraper.create_scraper()
+    # Usamos cloudscraper simulando ser un móvil Android para evitar bloqueos
+    scraper = cloudscraper.create_scraper(
+        browser={
+            'browser': 'chrome',
+            'platform': 'android',
+            'mobile': True
+        }
+    )
 
-    # 1. Obtener Menú Principal
-    main_url = "https://www.bovada.lv/services/sports/event/coupon/events/A/description/basketball/nba"
+    # URL V2 (API Móvil - Más rápida y menos bloqueada)
+    # Nota: Usamos la API 'v2' en lugar de 'coupon'
+    main_url = "https://www.bovada.lv/services/sports/event/v2/events/A/description/basketball/nba"
     
     try:
-        # Usamos scraper en lugar de requests
-        r = scraper.get(main_url, timeout=15)
+        # Headers anti-caché para traer datos frescos
+        headers = {
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+        }
+        
+        r = scraper.get(main_url, headers=headers, timeout=15)
+        
         if r.status_code != 200:
             print(f"❌ Error conexión menú principal: {r.status_code}")
             return pd.DataFrame()
+        
         main_data = r.json()
     except Exception as e:
         print(f"🔥 Error crítico: {e}")
@@ -33,24 +48,27 @@ def get_bovada_odds():
             link = event.get('link')
             is_live = event.get('live', False)
             
-            # Limpieza básica de nombres
+            # Limpieza de nombres
             try:
                 parts = title.split(' @ ')
                 if len(parts) == 2:
                     away_team, home_team = parts
                 else:
+                    # Si no hay @, asumimos formato "Visitante vs Local" o similar
                     away_team, home_team = "Visitante", "Local"
             except:
                 away_team, home_team = "Visitante", "Local"
 
             events_to_process = [event]
 
-            # --- DEEP SCAN (Para cuartos y mitades) ---
+            # --- DEEP SCAN (Entrar al partido para ver mitades) ---
             if link:
                 try:
                     if not link.startswith('/'): link = f"/{link}"
-                    deep_url = f"https://www.bovada.lv/services/sports/event/coupon/events/A/description{link}"
-                    time.sleep(random.uniform(0.1, 0.3)) # Pequeña pausa
+                    # URL V2 profunda
+                    deep_url = f"https://www.bovada.lv/services/sports/event/v2/events/A/description{link}"
+                    time.sleep(random.uniform(0.1, 0.4)) 
+                    
                     r_deep = scraper.get(deep_url, timeout=10)
                     if r_deep.status_code == 200:
                         deep_data = r_deep.json()
@@ -79,8 +97,9 @@ def get_bovada_odds():
                     if not clean_period: continue
 
                     for market in group['markets']:
-                        # Buscamos Spread o Handicap
                         desc = market.get('description', '')
+                        
+                        # Buscamos Spread (Hándicap)
                         if not any(x in desc for x in ["Spread", "Handicap", "Point Spread"]):
                             continue
 
@@ -93,8 +112,9 @@ def get_bovada_odds():
                             
                             try:
                                 f_price = float(price)
-                                # Filtro cuota jugable
-                                if not (1.70 <= f_price <= 2.30): continue
+                                # HE AMPLIADO EL RANGO: Ahora acepta de 1.50 a 2.50
+                                # Esto soluciona que te salgan líneas incorrectas o falten líneas
+                                if not (1.50 <= f_price <= 2.50): continue
                             except: continue
 
                             # Detectar si es LOCAL
